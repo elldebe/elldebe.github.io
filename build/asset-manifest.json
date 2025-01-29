@@ -1,0 +1,13 @@
+{
+  "files": {
+    "main.css": "/elldebe.github.io/static/css/main.f4218a68.css",
+    "main.js": "/elldebe.github.io/static/js/main.2fde439b.js",
+    "index.html": "/elldebe.github.io/index.html",
+    "main.f4218a68.css.map": "/elldebe.github.io/static/css/main.f4218a68.css.map",
+    "main.2fde439b.js.map": "/elldebe.github.io/static/js/main.2fde439b.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.f4218a68.css",
+    "static/js/main.2fde439b.js"
+  ]
+}
