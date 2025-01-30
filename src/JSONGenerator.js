@@ -14,13 +14,25 @@ const JSONGenerator = () => {
     id: 1,
     name: '',
     serviceId: 1,
-    steps: []
+    steps: [],
+    defaultImage: ''
   });
 
   const [jsonPreview, setJsonPreview] = useState('');
 
   const updateJsonPreview = useCallback(() => {
-    setJsonPreview(JSON.stringify(formData, null, 2));
+    // Reorganize the steps to match the desired order
+    const formattedData = {
+      ...formData,
+      steps: formData.steps.map(step => ({
+        items: step.items,
+        order: step.order,
+        title: step.title,
+        ...(step.required !== undefined && { required: step.required }),
+        ...(step.nextButton && { nextButton: step.nextButton })
+      }))
+    };
+    setJsonPreview(JSON.stringify(formattedData, null, 2));
   }, [formData]);
 
   useEffect(() => {
@@ -30,8 +42,31 @@ const JSONGenerator = () => {
   const updateBasicInfo = (field, value) => {
     setFormData(prev => ({
       ...prev,
-      [field]: field === 'name' ? value : parseInt(value) || 1
+      [field]: field === 'name' || field === 'defaultImage' ? value : parseInt(value) || 1
     }));
+  };
+
+  const getDefaultItemByType = (type, stepItems = []) => {
+    switch(type) {
+      case 'TEXT_HINT':
+        return { type, text: '', headline: '' };
+      case 'INPUT_PLZ':
+        return { type, name: 'Postleitzahl', label: '', required: true, placeholder: 'Postleitzahl' };
+      case 'RADIO':
+        // Wenn es bereits RADIO items gibt, nutze deren group
+        const existingRadio = stepItems.find(item => item.type === 'RADIO');
+        return { 
+          type, 
+          group: existingRadio?.group || '', 
+          label: '' 
+        };
+      case 'INPUT_TEXT':
+        return { type, name: '', label: '', required: false, placeholder: '' };
+      case 'INPUT_NUMBER':
+        return { type, name: '', label: '', required: false, placeholder: '' };
+      default:
+        return { type };
+    }
   };
 
   const addStep = () => {
@@ -40,7 +75,8 @@ const JSONGenerator = () => {
       steps: [...prev.steps, {
         title: '',
         order: prev.steps.length + 1,
-        items: []
+        items: [],
+        required: false
       }]
     }));
   };
@@ -57,7 +93,12 @@ const JSONGenerator = () => {
       ...prev,
       steps: prev.steps.map((step, index) => 
         index === stepIndex 
-          ? { ...step, [field]: field === 'order' ? parseInt(value) || 1 : value }
+          ? { 
+              ...step, 
+              [field]: field === 'order' ? parseInt(value) || 1 
+                    : field === 'required' ? value === 'true'
+                    : value 
+            }
           : step
       )
     }));
@@ -68,7 +109,10 @@ const JSONGenerator = () => {
       ...prev,
       steps: prev.steps.map((step, index) => 
         index === stepIndex 
-          ? { ...step, items: [...step.items, { type: 'TEXT_HINT', text: '', label: '' }] }
+          ? { 
+              ...step, 
+              items: [...step.items, getDefaultItemByType('TEXT_HINT', step.items)]
+            }
           : step
       )
     }));
@@ -85,18 +129,38 @@ const JSONGenerator = () => {
     }));
   };
 
-  const updateItem = (stepIndex, itemIndex, field, value) => {
+// In der updateItem Funktion für RADIO Elemente:
+const updateItem = (stepIndex, itemIndex, field, value) => {
     setFormData(prev => ({
       ...prev,
       steps: prev.steps.map((step, sIndex) => 
         sIndex === stepIndex 
           ? {
               ...step,
-              items: step.items.map((item, iIndex) => 
-                iIndex === itemIndex 
-                  ? { ...item, [field]: value }
-                  : item
-              )
+              items: step.items.map((item, iIndex) => {
+                if (iIndex === itemIndex) {
+                  const updatedItem = { 
+                    ...item, 
+                    [field]: field === 'required' ? value === 'true' : value 
+                  };
+                  
+                  // Wenn es ein RADIO Item ist und die Gruppe geändert wird,
+                  // aktualisiere alle RADIO Items in diesem Step
+                  if (item.type === 'RADIO' && field === 'group') {
+                    return updatedItem;
+                  }
+                  return updatedItem;
+                }
+                
+                // Update other radio items in the same step if group is changed
+                if (item.type === 'RADIO' && 
+                    field === 'group' && 
+                    step.items[itemIndex].type === 'RADIO') {
+                  return { ...item, group: value };
+                }
+                
+                return item;
+              })
             }
           : step
       )
@@ -155,6 +219,16 @@ const JSONGenerator = () => {
                 className="w-full p-2 border rounded"
               />
             </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">Default Image URL:</label>
+              <input
+                type="text"
+                value={formData.defaultImage}
+                onChange={(e) => updateBasicInfo('defaultImage', e.target.value)}
+                className="w-full p-2 border rounded"
+                placeholder="https://..."
+              />
+            </div>
           </div>
         </div>
 
@@ -199,7 +273,27 @@ const JSONGenerator = () => {
                     value={step.order}
                     onChange={(e) => updateStep(stepIndex, 'order', e.target.value)}
                     className="w-full p-2 border rounded"
-                    min="1"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Required:</label>
+                  <select
+                    value={step.required?.toString() || 'false'}
+                    onChange={(e) => updateStep(stepIndex, 'required', e.target.value)}
+                    className="w-full p-2 border rounded"
+                  >
+                    <option value="false">Nein</option>
+                    <option value="true">Ja</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Next Button:</label>
+                  <input
+                    type="text"
+                    value={step.nextButton || ''}
+                    onChange={(e) => updateStep(stepIndex, 'nextButton', e.target.value)}
+                    className="w-full p-2 border rounded"
+                    placeholder="Optional (z.B. 'Weiter')"
                   />
                 </div>
               </div>
@@ -221,20 +315,106 @@ const JSONGenerator = () => {
                     <div className="flex-1">
                       <select
                         value={item.type}
-                        onChange={(e) => updateItem(stepIndex, itemIndex, 'type', e.target.value)}
+                        onChange={(e) => {
+                          const newType = e.target.value;
+                          const newItem = getDefaultItemByType(newType);
+                          setFormData(prev => ({
+                            ...prev,
+                            steps: prev.steps.map((s, sIdx) =>
+                              sIdx === stepIndex
+                                ? {
+                                    ...s,
+                                    items: s.items.map((i, iIdx) =>
+                                      iIdx === itemIndex ? newItem : i
+                                    )
+                                  }
+                                : s
+                            )
+                          }));
+                        }}
                         className="w-full p-2 border rounded mb-2"
                       >
                         {Object.entries(ITEM_TYPES).map(([key, value]) => (
                           <option key={key} value={key}>{value}</option>
                         ))}
                       </select>
-                      <input
-                        type="text"
-                        value={item.type === 'TEXT_HINT' ? item.text : item.label || ''}
-                        onChange={(e) => updateItem(stepIndex, itemIndex, item.type === 'TEXT_HINT' ? 'text' : 'label', e.target.value)}
-                        placeholder={item.type === 'TEXT_HINT' ? 'Text' : 'Label'}
-                        className="w-full p-2 border rounded"
-                      />
+
+                      {item.type === 'TEXT_HINT' && (
+                        <>
+                          <input
+                            type="text"
+                            value={item.headline || ''}
+                            onChange={(e) => updateItem(stepIndex, itemIndex, 'headline', e.target.value)}
+                            placeholder="Überschrift"
+                            className="w-full p-2 border rounded mb-2"
+                          />
+                          <input
+                            type="text"
+                            value={item.text || ''}
+                            onChange={(e) => updateItem(stepIndex, itemIndex, 'text', e.target.value)}
+                            placeholder="Text"
+                            className="w-full p-2 border rounded"
+                          />
+                        </>
+                      )}
+
+                      {item.type !== 'TEXT_HINT' && (
+                        <>
+                          {(item.type === 'INPUT_PLZ' || item.type === 'INPUT_TEXT' || item.type === 'INPUT_NUMBER') && (
+                            <>
+                              <input
+                                type="text"
+                                value={item.name || ''}
+                                onChange={(e) => updateItem(stepIndex, itemIndex, 'name', e.target.value)}
+                                placeholder="Name"
+                                className="w-full p-2 border rounded mb-2"
+                              />
+                              <input
+                                type="text"
+                                value={item.placeholder || ''}
+                                onChange={(e) => updateItem(stepIndex, itemIndex, 'placeholder', e.target.value)}
+                                placeholder="Placeholder"
+                                className="w-full p-2 border rounded mb-2"
+                              />
+                            </>
+                          )}
+                          <input
+                            type="text"
+                            value={item.label || ''}
+                            onChange={(e) => updateItem(stepIndex, itemIndex, 'label', e.target.value)}
+                            placeholder="Label"
+                            className="w-full p-2 border rounded mb-2"
+                          />
+                          {item.type === 'RADIO' && (
+                            <>
+                              <input
+                                type="text"
+                                value={item.group || ''}
+                                onChange={(e) => updateItem(stepIndex, itemIndex, 'group', e.target.value)}
+                                placeholder="Group"
+                                className="w-full p-2 border rounded mb-2"
+                              />
+                              <input
+                                type="text"
+                                value={item.iconPath || ''}
+                                onChange={(e) => updateItem(stepIndex, itemIndex, 'iconPath', e.target.value)}
+                                placeholder="Icon Path URL"
+                                className="w-full p-2 border rounded mb-2"
+                              />
+                            </>
+                          )}
+                          {(item.type === 'INPUT_PLZ' || item.type === 'INPUT_TEXT' || item.type === 'INPUT_NUMBER') && (
+                            <select
+                              value={item.required?.toString() || 'false'}
+                              onChange={(e) => updateItem(stepIndex, itemIndex, 'required', e.target.value)}
+                              className="w-full p-2 border rounded"
+                            >
+                              <option value="false">Optional</option>
+                              <option value="true">Required</option>
+                            </select>
+                          )}
+                        </>
+                      )}
                     </div>
                     <button
                       onClick={() => removeItem(stepIndex, itemIndex)}
